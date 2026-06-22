@@ -211,6 +211,13 @@ h1,h2,h3,.money,.btn,.eyebrow,.opt-title,.char-name{font-family:'Fredoka',sans-s
 .viewbar button{font-family:'Nunito',sans-serif;font-weight:800;font-size:13px;border:2px solid var(--line);background:#f6f8fc;color:var(--violet);border-radius:10px;padding:9px 12px;cursor:pointer}
 .viewbar button:disabled{opacity:.4;cursor:default}
 .viewbar #view-return{background:var(--violet);color:#fff;border-color:var(--violet)}
+.ledger{background:#fff;border-radius:14px;padding:8px 14px;font-weight:700;font-size:13.5px}
+.lg-row{display:flex;justify-content:space-between;gap:12px;padding:5px 0;color:var(--ink)}
+.lg-row .up{color:var(--mint-deep)}
+.lg-row .down{color:var(--coral-deep)}
+.lg-row.sub{border-top:1px dashed var(--line);color:var(--ink-soft);font-style:italic}
+.lg-row.total{border-top:2px solid var(--line);margin-top:4px;padding-top:8px;font-family:'Fredoka',sans-serif;font-weight:600;font-size:16px}
+.lg-note-row{font-size:12px;font-weight:700;color:var(--ink-soft);padding:0 0 4px 14px}
 
 .round-card{background:var(--card);border-radius:26px;box-shadow:var(--shadow-lg);overflow:hidden}
 .income{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;padding:16px 18px;background:linear-gradient(#fbfcfe,#f3f6fb);border-bottom:2px solid var(--line);font-weight:800;font-size:14px}
@@ -383,12 +390,6 @@ h1,h2,h3,.money,.btn,.eyebrow,.opt-title,.char-name{font-family:'Fredoka',sans-s
       <div class="timertext" id="timertext">⏳ 3:00</div>
     </div>
     <button class="reviewbtn" id="back-btn" hidden>← Back</button>
-    <div class="viewbar" id="view-bar" hidden>
-      <button id="view-older">← Older</button>
-      <span id="view-label">—</span>
-      <button id="view-newer">Newer →</button>
-      <button id="view-return">Back to current ↩</button>
-    </div>
 
     <div class="round-card">
       <div class="income">
@@ -694,7 +695,9 @@ function monthlyIncome(){ return Math.round(state.c.wage*state.incomeMult) + sta
 
 /* ---- enter a new round: apply payday, then show the scenario ---- */
 function renderRound(){
-  state.balance += monthlyIncome() - state.c.fixed;   // payday
+  state.roundStartBal = state.balance;                 // balance carried into the month
+  state.roundIncome   = monthlyIncome();
+  state.balance += state.roundIncome - state.c.fixed;  // payday
   renderScenario(state.round, 'live');
   startTimer(DECISION_SECONDS, 'decide');
 }
@@ -740,44 +743,54 @@ function renderScenario(r, mode){
     showViewPanel(h);
     $('view-panel').hidden = false;
     $('timerbar').classList.add('off');
-    $('back-btn').hidden = true;
-    $('view-bar').hidden = false;
-    $('view-label').textContent = `Round ${r+1} · already played`;
-    $('view-older').disabled = (r<=0);
+    $('back-btn').hidden = false;
+    $('back-btn').textContent = '↩ Return to game';
   } else {
     opts.classList.remove('review');
     $('view-panel').hidden = true;
-    $('view-bar').hidden = true;
     $('back-btn').hidden = state.history.length === 0;
+    $('back-btn').textContent = '← Back';
   }
 }
 
 function showViewPanel(h){
+  const afterPay = h.balBefore + h.income - h.fixed;
+  let rows =
+    `<div class="lg-row"><span>Carried in</span><span>${fmt(h.balBefore)}</span></div>`+
+    `<div class="lg-row"><span>＋ Salary</span><span class="up">${fmtDelta(h.income)}</span></div>`+
+    `<div class="lg-row"><span>－ Living costs (needs)</span><span class="down">${fmtDelta(-h.fixed)}</span></div>`+
+    `<div class="lg-row sub"><span>After payday</span><span>${fmt(afterPay)}</span></div>`;
+  if(h.choiceCash !== 0){
+    rows += `<div class="lg-row"><span>Your choice: ${h.title}</span><span class="${h.choiceCash>=0?'up':'down'}">${fmtDelta(h.choiceCash)}</span></div>`;
+  } else {
+    rows += `<div class="lg-row"><span>Your choice: ${h.title}</span><span>RM0</span></div>`;
+    if(h.choiceExtra) rows += `<div class="lg-note-row">↳ ${h.choiceExtra}</div>`;
+  }
+  if(h.twist){
+    rows += `<div class="lg-row"><span>Sudden event: ${h.twist.title}</span><span class="${h.twist.cash>=0?'up':'down'}">${fmtDelta(h.twist.cash)}</span></div>`;
+  }
+  rows += `<div class="lg-row total"><span>End balance</span><span class="${h.balAfter>=0?'up':'down'}">${fmt(h.balAfter)}</span></div>`;
+
   let html =
-    `<div class="vp-head">👁 You already played this round — here's what happened.</div>`+
+    `<div class="vp-head">👁 You already played this round — here's exactly how your balance changed.</div>`+
     `<div class="vp-line"><span class="vp-ico">${h.ico}</span>`+
-    `<div class="vp-body"><b>You chose: ${h.title}</b><div class="vp-note">${h.note}</div></div>`+
-    `<span class="rev-d ${h.good?'up':'down'}">${h.disp}</span></div>`;
+    `<div class="vp-body"><b>You chose: ${h.title}</b><div class="vp-note">${h.note}</div></div></div>`;
   if(h.twist){
     html +=
       `<div class="vp-twist"><span class="vp-ico">${h.twist.ico}</span>`+
-      `<div class="vp-body"><b>${h.twist.title}</b><div class="vp-note">${h.twist.text}</div></div>`+
-      `<span class="rev-d ${h.twist.good?'up':'down'}">${h.twist.disp}</span></div>`;
+      `<div class="vp-body"><b>${h.twist.title}</b><div class="vp-note">${h.twist.text}</div></div></div>`;
   }
+  html += `<div class="ledger">${rows}</div>`;
   $('view-panel').innerHTML = html;
 }
 
-/* ---- "Back" navigation through past rounds (read-only) ---- */
-function openBack(){
-  if(state.history.length===0 || state.viewing!=null) return;
+/* ---- "Back" toggles between the live round and the previous page ---- */
+function toggleBack(){
+  if(state.viewing != null){ returnToLive(); return; }
+  if(state.history.length === 0) return;
   state.decideLeft = (state.phase==='decide') ? state.timeLeft : null;
   stopTimer();
   renderScenario(state.round-1, 'view');
-}
-function viewOlder(){ if(state.viewing>0) renderScenario(state.viewing-1,'view'); }
-function viewNewer(){
-  if(state.viewing < state.round-1) renderScenario(state.viewing+1,'view');
-  else returnToLive();
 }
 function returnToLive(){
   renderScenario(state.round, 'live');
@@ -821,8 +834,13 @@ function choose(side){
   applyEffect(opt);
   if(opt.tag==='want' || opt.tag==='risk') state.wants++; else state.needs++;
   const d = effDisplay(opt);
+  let extra = null;
+  if(opt.incomeMonthly) extra = `Salary ${fmtDelta(opt.incomeMonthly)}/month from next round`;
+  else if(opt.incomeMult){ const pct=Math.round((opt.incomeMult-1)*100); extra = `Salary ${pct>0?'+':''}${pct}% from next round`; }
   state.pending = { round:state.round+1, side, question:sc.q, ico:opt.ico, title:opt.title,
-                    note:opt.note||'', disp:d.t, good:d.good, twist:null };
+                    note:opt.note||'', disp:d.t, good:d.good,
+                    balBefore:state.roundStartBal, income:state.roundIncome, fixed:state.c.fixed,
+                    choiceCash:(opt.once||0), choiceExtra:extra, twist:null };
   showResult(opt);
 }
 
@@ -873,7 +891,7 @@ function onResultNext(){
   if(tw){
     applyEffect(tw); state.curveCount++;
     const td = effDisplay(tw);
-    if(state.pending) state.pending.twist = { ico:tw.ico, title:tw.title, text:tw.text, note:tw.note||'', disp:td.t, good:td.good };
+    if(state.pending) state.pending.twist = { ico:tw.ico, title:tw.title, text:tw.text, note:tw.note||'', cash:(tw.once||0), disp:td.t, good:td.good };
     showCurveball(tw);
   } else advanceRound();
 }
@@ -1000,8 +1018,7 @@ function submitCode(){
 /* ---- wiring ---- */
 $('code-go').addEventListener('click', submitCode);
 $('gm-code').addEventListener('keydown', e=>{ if(e.key==='Enter') submitCode(); });
-$('back-btn').addEventListener('click', openReview);
-$('review-resume').addEventListener('click', ()=> show('screen-round'));
+$('back-btn').addEventListener('click', toggleBack);
 $('go-start').addEventListener('click', routeStart);
 $('rv-start').addEventListener('click', ()=> startGame(chosenIndex));
 $('opt-a').addEventListener('click', ()=>choose('a'));
